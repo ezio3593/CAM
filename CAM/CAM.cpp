@@ -330,7 +330,7 @@ namespace CAM
 		ossteam << '[';
 		for (size_t i = 0; i < stack.size(); i++) {
 			ossteam << stack[i]->to_string();
-			if (i != stack.size())
+			if (i != stack.size() - 1)
 				ossteam << ", ";
 		}
 		ossteam << ']';
