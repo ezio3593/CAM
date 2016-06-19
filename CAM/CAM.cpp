@@ -24,12 +24,12 @@ namespace CAM
 	void CAM::run(const std::string &s) {
 		size_t i = 0;
 
+		History history;
+		_term = Term::make();
+
 		time_point_t begin = std::chrono::steady_clock::now();
 
-		History history;
-
 		try {
-			_term = Term::make();
 			CodeTerm::code_t code = parse_code(s);
 
 			while (!code.empty())
@@ -38,10 +38,6 @@ namespace CAM
 					history.add(_term->to_string(), CodeTerm::to_string(code), to_string(_stack));
 
 				char op = code.front()->op();
-				if (_transitions.find(op) == _transitions.end()) {
-					std::cerr << "invalid op: " << op << std::endl;
-					break;
-				}
 
 				auto tr = _transitions[op];
 
@@ -72,9 +68,6 @@ namespace CAM
 		CodeTerm::code_t code;
 		while (!c.empty())
 		{
-			if (_op_parsers.find(c[0]) == _op_parsers.end())
-				throw InvalidCodeException(c);
-
 			auto p = _op_parsers[c[0]];
 			c = p(c, code);
 		}
@@ -83,6 +76,10 @@ namespace CAM
 	}
 
 	void CAM::init_parsers() {
+		auto undef = [](const std::string& s, CodeTerm::code_t &code) -> std::string {
+			throw InvalidCodeException(s);
+		};
+
 		auto default_parser = [](const std::string& s, CodeTerm::code_t &code) -> std::string {
 			auto t = CodeTerm::make(s[0]);
 			code.push_back(t);
@@ -121,50 +118,60 @@ namespace CAM
 			return rest;
 		};
 
-		_op_parsers.insert(std::pair<char, op_parser_t>('F', default_parser));
-		_op_parsers.insert(std::pair<char, op_parser_t>('S', default_parser));
-		_op_parsers.insert(std::pair<char, op_parser_t>('<', default_parser));
-		_op_parsers.insert(std::pair<char, op_parser_t>(',', default_parser));
-		_op_parsers.insert(std::pair<char, op_parser_t>('>', default_parser));
-		_op_parsers.insert(std::pair<char, op_parser_t>('e', default_parser));
+		for (size_t i = 0; i < sizeof(_op_parsers) / sizeof(*_op_parsers); i++)
+			_op_parsers[i] = undef;
 
-		_op_parsers.insert(std::pair<char, op_parser_t>('+', default_parser));
-		_op_parsers.insert(std::pair<char, op_parser_t>('-', default_parser));
-		_op_parsers.insert(std::pair<char, op_parser_t>('=', default_parser));
-		_op_parsers.insert(std::pair<char, op_parser_t>('*', default_parser));
+		_op_parsers['F'] = default_parser;
+		_op_parsers['S'] = default_parser;
+		_op_parsers['<'] = default_parser;
+		_op_parsers[','] = default_parser;
+		_op_parsers['>'] = default_parser;
+		_op_parsers['e'] = default_parser;
 
-		_op_parsers.insert(std::pair<char, op_parser_t>('\\', un_op_parser));
-		_op_parsers.insert(std::pair<char, op_parser_t>('\'', quote_op_parser));
-		_op_parsers.insert(std::pair<char, op_parser_t>('Y', un_op_parser));
+		_op_parsers['+'] = default_parser;
+		_op_parsers['-'] = default_parser;
+		_op_parsers['='] = default_parser;
+		_op_parsers['*'] = default_parser;
 
-		_op_parsers.insert(std::pair<char, op_parser_t>('b', bin_op_parser));
+		_op_parsers['\\'] = un_op_parser;
+		_op_parsers['\''] = quote_op_parser;
+		_op_parsers['Y'] = un_op_parser;
+
+		_op_parsers['b'] = bin_op_parser;
 	}
 
 	void CAM::init_transitions() {
-		_transitions.insert(std::pair<char, transition_t>('F', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		auto undef = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+			throw InvalidCodeException(code.front()->to_string());
+		};
+
+		for (size_t i = 0; i < sizeof(_transitions) / sizeof(*_transitions); i++)
+			_transitions[i] = undef;
+
+		_transitions['F'] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			auto pair = std::dynamic_pointer_cast<TermPair>(term);
 			if (!pair.get())
 				throw InvalidTermException(term->to_string(), "(s, t)");
 
 			term = pair->first();
 			code.pop_front();
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>('S', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions['S'] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			auto pair = std::dynamic_pointer_cast<TermPair>(term);
 			if (!pair.get())
 				throw InvalidTermException(term->to_string(), "(s, t)");
 
 			term = pair->second();
 			code.pop_front();
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>('<', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions['<'] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			stack.push_front(term);
 			code.pop_front();
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>(',', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions[','] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			if (stack.empty())
 				throw InvalidStackException("Empty stack");
 
@@ -173,9 +180,9 @@ namespace CAM
 			stack.push_front(term);
 			term = top;
 			code.pop_front();
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>('>', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions['>'] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			if (stack.empty())
 				throw InvalidStackException("Empty stack");
 
@@ -183,9 +190,9 @@ namespace CAM
 			stack.pop_front();
 			term = TermPair::make(top, term);
 			code.pop_front();
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>('e', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions['e'] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			auto pair = std::dynamic_pointer_cast<TermPair>(term);
 			if (!pair.get())
 				throw InvalidTermException(term->to_string(), "(C: s, t)");
@@ -198,9 +205,9 @@ namespace CAM
 			term = TermPair::make(app_term->term(), pair->second());
 			code.pop_front();
 			code.insert(code.begin(), c.begin(), c.end());
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>('\\', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions['\\'] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			auto c = std::dynamic_pointer_cast<CodeTermWithArgs>(code.front());
 			if (!c.get())
 				throw InvalidCodeException(code.front()->to_string());
@@ -210,18 +217,18 @@ namespace CAM
 
 			term = AppTerm::make(c->get_arg(0), term);
 			code.pop_front();
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>('\'', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions['\''] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			auto c = std::dynamic_pointer_cast<QuoteCodeTerm>(code.front());
 			if (!c.get())
 				throw InvalidCodeException(code.front()->to_string());
 
 			term = QuoteTerm::make(c->get_arg());
 			code.pop_front();
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>('b', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions['b'] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			auto t = std::dynamic_pointer_cast<QuoteTerm>(term);
 			if (!t.get())
 				throw InvalidTermException(term->to_string(), "numeric constant");
@@ -249,9 +256,9 @@ namespace CAM
 				
 			code.pop_front();
 			code.insert(code.begin(), next.begin(), next.end());
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>('Y', [this](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions['Y'] = [this](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			auto c = std::dynamic_pointer_cast<CodeTermWithArgs>(code.front());
 			if (!c.get())
 				throw InvalidCodeException(code.front()->to_string());
@@ -261,35 +268,35 @@ namespace CAM
 
 			term = RecTerm::make(c->get_arg(0), term);
 			code.pop_front();
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>('+', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions['+'] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			apply_operation(term, [](const mpz_class &a, const mpz_class &b) {
 				return a + b;
 			});
 			code.pop_front();
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>('-', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions['-'] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			apply_operation(term, [](const mpz_class &a, const mpz_class &b) {
 				return a - b;
 			});
 			code.pop_front();
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>('*', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions['*'] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			apply_operation(term, [](const mpz_class &a, const mpz_class &b) {
 				return a * b;
 			});
 			code.pop_front();
-		}));
+		};
 
-		_transitions.insert(std::pair<char, transition_t>('=', [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
+		_transitions['='] = [](Term::term_ptr &term, CodeTerm::code_t &code, stack_t &stack) {
 			apply_operation(term, [](const mpz_class &a, const mpz_class &b) {
 				return a == b;
 			});
 			code.pop_front();
-		}));
+		};
 	}
 
 	void CAM::apply_operation(Term::term_ptr &term, binary_operation_t op) {

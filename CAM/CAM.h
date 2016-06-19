@@ -51,8 +51,8 @@ namespace CAM
 	{
 		stack_t _stack;
 		Term::term_ptr _term;
-		std::map<char, transition_t> _transitions;
-		std::map<char, op_parser_t> _op_parsers;
+		transition_t _transitions[256];
+		op_parser_t _op_parsers[256];
 		bool _is_verbose;
 		bool _is_print_result;
 
